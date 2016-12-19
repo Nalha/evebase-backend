@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  Stage:
+    Type: "String"
+  CCPclientId:
+    Type: "String"
+  CCPsecretKey:
+    Type: "String"
+
+Resources:
+  LambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+  LambdaPolicies:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "EvebaseLambda"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+          -
+            Effect: "Allow"
+            Action:
+              - "dynamodb:BatchGetItem"
+              - "dynamodb:BatchWriteItem"
+              - "dynamodb:DeleteItem"
+              - "dynamodb:GetItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:Query"
+              - "dynamodb:Scan"
+              - "dynamodb:UpdateItem"
+            Resource:
+              - !Join [ "", ["arn:aws:dynamodb:", !Ref "AWS::Region", ":*:table/", !Ref TokensDynamoDbTable]]
+      Roles:
+        - !Ref LambdaRole
+
+  EveBaseApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: !Join ["-", ["EveBase", !Ref Stage]]
+      BodyS3Location: "swagger.yml"
+  CustomersApiDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    DependsOn:
+      - TokenGetMethod
+      - TokenOptionsMethod
+    Properties:
+      RestApiId: !Ref EveBaseApi
+      StageName: !Ref Stage
+  TokenResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt EveBaseApi.RootResourceId
+      PathPart: "token"
+      RestApiId: !Ref EveBaseApi
+  TokenGetMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: "GET"
+      AuthorizationType: "none"
+      ResourceId: !Ref TokenResource
+      RestApiId: !Ref EveBaseApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Join ["", ["arn:aws:apigateway:", !Ref "AWS::Region", ":lambda:path/2015-03-31/functions/", !GetAtt GetTokenLambda.Arn, "/invocations"]]
+        IntegrationResponses:
+          - StatusCode: 200
+  TokenOptionsMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref EveBaseApi
+      ResourceId: !Ref TokenResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: true
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+            StatusCode: "200"
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-dw-user-id,x-dw-source,x-dw-session-id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+            StatusCode: "200"
+        RequestTemplates:
+          application/json: "{\n    \"statusCode\": 200\n}"
+
+  GetTokenLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code: "../functions/getToken"
+      Description: "Gets token for "
+      FunctionName: !Join ["-", ["EveBase", "getToken", !Ref Stage]]
+      Handler: "handler.handler"
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: "nodejs4.3"
+      Timeout: 10
+      Environment:
+        Variables:
+          CCPclientId: !Ref CCPclientId
+          CCPsecretKey: !Ref CCPsecretKey
+          TokensTable: !Ref TokensDynamoDbTable
+  GetTokenPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref GetTokenLambda
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref "AWS::Region", ":", !Ref "AWS::AccountId", ":", !Ref EveBaseApi, "/*/GET/token"]]
+
+  TokensDynamoDbTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "characterId"
+          AttributeType: N
+      KeySchema:
+        - AttributeName: "characterId"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      TableName: !Join ["-", ["Tokens", !Ref Stage]]
+  CustomersTableReadAlarm:
+      Type: "AWS::CloudWatch::Alarm"
+      Properties:
+        # SNS Action?
+        AlarmDescription: "Notifies when provisioned read is close to limit."
+        AlarmName: !Join ["-", [!Ref TokensDynamoDbTable, "ReadAlarm"]]
+        ComparisonOperator: "GreaterThanOrEqualToThreshold"
+        EvaluationPeriods: "5"
+        MetricName: "ConsumedReadCapacityUnits"
+        Namespace: "AWS/DynamoDB"
+        Period: "60"
+        Statistic: "Sum"
+        Threshold: "48"
+        Dimensions:
+          - Name: TableName
+            Value: !Ref TokensDynamoDbTable
+  CustomersTableWriteAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      # SNS Action?
+      AlarmDescription: "Notifies when provisioned write is close to limit."
+      AlarmName: !Join ["-", [!Ref TokensDynamoDbTable, "WriteAlarm"]]
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      EvaluationPeriods: "5"
+      MetricName: "ConsumedWriteCapacityUnits"
+      Namespace: "AWS/DynamoDB"
+      Period: "60"
+      Statistic: "Sum"
+      Threshold: "48"
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TokensDynamoDbTable
+
+Outputs:
+  ApiUrl:
+    Value: !Join ["", ["https://", !Ref EveBaseApi, ".execute-api.", !Ref "AWS::Region", ".amazonaws.com/", !Ref Stage]]

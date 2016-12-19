@@ -1,0 +1,12 @@
+{
+  "name": "evebase-backend",
+  "version": "1.0.0",
+  "author": "jesper.hasteen@gmail.com",
+  "license": "ISC",
+  "devDependencies": {
+    "aws-sdk": "^2.7.15"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.7.13"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "evebase-backend-gettoken",
+  "version": "1.0.0",
+  "description": "",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lodash": "^4.17.2",
+    "uuid": "^3.0.1"
+  }
+}
