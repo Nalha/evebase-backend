@@ -1,13 +1,13 @@
 'use strict';
 
-const async = require("async");
+const waterfall = require("async/waterfall");
 const AWS = require("aws-sdk");
 const https = require("https");
 const UUID = require("uuid");
 
 exports.handler = (event, context, callback) => {
 
-    async.waterfall([
+    waterfall([
         (cb) => {
             checkInput(event, cb);
         },
@@ -22,7 +22,6 @@ exports.handler = (event, context, callback) => {
         }
     ], (err, data) => {
         if(err) {
-            console.log(event);
             return callback(null, err);
         } else {
             return callback(null, {
@@ -38,13 +37,23 @@ exports.handler = (event, context, callback) => {
 };
 
 function checkInput(event, callback) {
-    if(!event.queryStringParameters || !event.queryStringParameters.code) {
+
+    if(!event.queryStringParameters) {
+        console.log("Missing parameters");
+        return callback({
+            "statusCode": 400,
+            "body": "MissingParameter:all"
+        });
+    }
+
+    if(!event.queryStringParameters.code) {
         console.log("Missing parameter: code");
         return callback({
             "statusCode": 400,
             "body": "MissingParameter:code"
         });
     }
+
     return callback(null);
 }
 
@@ -71,12 +80,21 @@ function getToken(event, callback) {
             try {
                 parsedData = JSON.parse(rawData);
             } catch (e) {
-                console.log(e);
+                console.log("getToken https request error: ", e);
                 return callback({
                     "statusCode": 500,
                     "body": "ServerError"
                 });
             }
+
+            if(!parsedData["access_token"] || !parsedData["refresh_token"]) {
+                console.log("getToken error: incorrect code");
+                return callback({
+                    "statusCode": 500,
+                    "body": "ServerError"
+                });
+            }
+
             return callback(null, parsedData);
         });
     });
@@ -102,7 +120,8 @@ function storeToken(characterData, tokenData, callback) {
 
     db.put(params, (err) => {
        if(err) {
-           console.log(err);
+           console.log("storeToken db put error: " ,err);
+           console.log("Params: ", params);
            return callback({
               "statusCode": 500,
                "body": "ServerError"
@@ -134,7 +153,8 @@ function getCharacterId(tokenData, callback) {
             try {
                 characterData = JSON.parse(rawData);
             } catch (e) {
-                console.log(e);
+                console.log("getCharacterId https request error: ", e);
+                console.log("Params: ", options);
                 return callback({
                     "statusCode": 500,
                     "body": "ServerError"
