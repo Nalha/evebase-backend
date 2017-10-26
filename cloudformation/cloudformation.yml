@@ -85,6 +85,19 @@ Resources:
         Uri: !Join ["", ["arn:aws:apigateway:", !Ref "AWS::Region", ":lambda:path/2015-03-31/functions/", !GetAtt GetTokenLambda.Arn, "/invocations"]]
         IntegrationResponses:
           - StatusCode: 200
+  TokenPostMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: "POST"
+      AuthorizationType: "none"
+      ResourceId: !Ref TokenResource
+      RestApiId: !Ref EveBaseApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Join ["", ["arn:aws:apigateway:", !Ref "AWS::Region", ":lambda:path/2015-03-31/functions/", !GetAtt InternalAuthenticateLambda.Arn, "/invocations"]]
+        IntegrationResponses:
+          - StatusCode: 200
   TokenOptionsMethod:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -104,7 +117,7 @@ Resources:
           - ResponseParameters:
               method.response.header.Access-Control-Allow-Origin: "'*'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-dw-user-id,x-dw-source,x-dw-session-id'"
-              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,POST'"
             StatusCode: "200"
         RequestTemplates:
           application/json: "{\n    \"statusCode\": 200\n}"
@@ -131,6 +144,29 @@ Resources:
       FunctionName: !Ref GetTokenLambda
       Principal: "apigateway.amazonaws.com"
       SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref "AWS::Region", ":", !Ref "AWS::AccountId", ":", !Ref EveBaseApi, "/*/GET/token"]]
+
+  InternalAuthenticateLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code: "../functions/internalAuthenticate"
+      Description: "Gets api key from internal access token"
+      FunctionName: !Join ["-", ["EveBase", "internalAuthenticate", !Ref Stage]]
+      Handler: "handler.handler"
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: "nodejs4.3"
+      Timeout: 10
+      Environment:
+        Variables:
+          CCPclientId: !Ref CCPclientId
+          CCPsecretKey: !Ref CCPsecretKey
+          TokensTable: !Ref TokensDynamoDbTable
+  InternalAuthenticatePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref InternalAuthenticateLambda
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref "AWS::Region", ":", !Ref "AWS::AccountId", ":", !Ref EveBaseApi, "/*/POST/token"]]
 
   TokensDynamoDbTable:
     Type: "AWS::DynamoDB::Table"

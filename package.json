@@ -4,9 +4,9 @@
   "author": "jesper.hasteen@gmail.com",
   "license": "ISC",
   "devDependencies": {
-    "aws-sdk": "^2.7.15"
+    "aws-sdk": "^2.141.0"
   },
   "dependencies": {
-    "aws-sdk": "^2.7.13"
+    "aws-sdk": "^2.141.0"
   }
 }
