@@ -1,0 +1,10 @@
+{
+  "name": "patch",
+  "version": "0.0.1",
+  "dependencies": {
+    "js-yaml": "^3.10.0"
+  },
+  "devDependencies": {
+    "aws-sdk": "^2.141.0"
+  }
+}
